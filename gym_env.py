@@ -11,8 +11,8 @@ class SoccerBetEnv(gym.Env):
         
         # Observation space: odds, time left, score, remaining bets/budget, expected returns
         self.observation_space = spaces.Box(
-            low=np.array([1.01, 1.01, 1.01, 0, 0, 0, 0, 0, -1000, -1000, -1000]),
-            high=np.array([50, 50, 50, 90, 10, 10, 5, 1000, 1000, 1000, 1000]),
+            low=np.array([1, 1, 1, 0, 0, 0, 0, 0, -100, -100, -100]),
+            high=np.array([100, 100, 100, 90, 10, 10, 5, 100, 100000, 100000, 100000]),
             dtype=np.float32
         )
         
@@ -51,43 +51,39 @@ class SoccerBetEnv(gym.Env):
             self.bets_remaining -= 1
             self.budget -= stake
             
-            # Simulate match outcome randomly (to be replaced with real results)
-            match_result = np.random.choice([0, 1, 2])  # 0: A wins, 1: Draw, 2: B wins
-            
-            if match_result == outcome_idx:
-                profit = (stake * self.odds[outcome_idx]) - stake
-                reward = profit
-                if outcome_idx == 0:
-                    self.expected_return_A += profit
-                elif outcome_idx == 1:
-                    self.expected_return_Draw += profit
-                else:
-                    self.expected_return_B += profit
+            # update expected returns
+            profit = (stake * self.odds[outcome_idx]) - stake
+            if outcome_idx == 0:
+                self.expected_return_A += profit
+                self.expected_return_Draw -= stake
+                self.expected_return_B -= stake
+
+            elif outcome_idx == 1:
+                self.expected_return_A -= stake
+                self.expected_return_Draw += profit
+                self.expected_return_B -= stake
             else:
-                reward = -stake
-                if outcome_idx == 0:
-                    self.expected_return_A -= stake
-                elif outcome_idx == 1:
-                    self.expected_return_Draw -= stake
-                else:
-                    self.expected_return_B -= stake
-        
-        # Update time & simulate minor odds movements
-        self.minutes_left -= 1
-        self.odds *= np.random.uniform(0.98, 1.02, 3)
-        
-        # Ensure odds remain within limits
-        self.odds = np.clip(self.odds, 1.01, 50)
-        
+                self.expected_return_A -= stake
+                self.expected_return_Draw -= stake
+                self.expected_return_B += profit
+            
         if self.minutes_left <= 0 or self.bets_remaining == 0:
             done = True  # End of game
         
-        return self._get_obs(), reward, done, {}
+        return self._get_obs(), done, {}
     
     def render(self):
         """Print environment state (for debugging)"""
-        print(f"Time Left: {self.minutes_left} mins | Odds: {self.odds} | Budget: {self.budget} | \
-              Bets Remaining: {self.bets_remaining} | Exp Returns: (A: {self.expected_return_A}, Draw: {self.expected_return_Draw}, B: {self.expected_return_B})")
+        print(f"Time Left: {self.minutes_left} mins | Odds: {self.odds} | Scores: (A: {self.score_A}, B: {self.score_B}) | \
+            Budget: {self.budget} | Bets Remaining: {self.bets_remaining} |\
+            Exp Returns: (A: {self.expected_return_A}, Draw: {self.expected_return_Draw}, B: {self.expected_return_B})")
+        
+    def update_match_state(self, odds, score_A, score_B, minutes_left):
+        """Update the match state with new odds, standings, and remaining minutes"""
+        self.odds = np.array(odds)
+        self.score_A = score_A
+        self.score_B = score_B
+        self.minutes_left = minutes_left
 
 # Example usage
 if __name__ == "__main__":
@@ -95,7 +91,18 @@ if __name__ == "__main__":
     obs = env.reset()
 
     done = False
+    minutes = 0
+    score_A = 0
+    score_B = 0
+
     while not done:
         action = env.action_space.sample()  # Random action
-        obs, reward, done, _ = env.step(action)
+        obs, done, _ = env.step(action)
+        env.update_match_state(np.random.uniform(1.5, 5.0, 3), score_A, score_B, 90-minutes)
         env.render()
+
+        minutes += 1
+        if minutes % 10 == 0:
+            score_A += np.random.randint(0, 2)
+            score_B += np.random.randint(0, 2)
+
